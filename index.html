@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Estación Meteorológica</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { display:flex; flex-direction:column; align-items:center; min-height:100vh;
+      position:relative; transition:background-color 1s; background:linear-gradient(135deg,#202c3b,#2d3e50);
+      font-family:'Orbitron',sans-serif;}
+    .weather-screen{background:#000;color:#00bfff;padding:20px;border-radius:10px;width:90%;max-width:700px;text-align:center;margin-bottom:20px;}
+    .data-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:15px;margin-top:10px;}
+    .data-box{background:rgba(255,255,255,.1);padding:16px;border-radius:8px;text-align:center;min-height:90px;box-shadow:0 0 6px rgba(0,191,255,.5);}
+    .label{font-size:1rem;font-weight:bold;}
+    .value{font-size:1.6rem;font-weight:bold;margin-top:5px;}
+    #spinner-mes{display:none;margin:10px auto;border:4px solid #f3f3f3;border-top:4px solid #00bfff;border-radius:50%;width:28px;height:28px;animation:spin 1s linear infinite;}
+    @keyframes spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
+  </style>
+</head>
+<body class="px-2 sm:px-4">
+  <h1 class="text-4xl font-bold text-white mb-4">ALFARNATE</h1>
+
+  <div class="weather-screen">
+    <h1 class="text-2xl font-bold">📡 Estación Meteorológica en tiempo real cada minuto</h1>
+    <div class="data-grid">
+      <div class="data-box"><p class="label">🌡️ Temperatura</p><p class="value" id="temperature">--</p></div>
+      <div class="data-box"><p class="label">💧 Humedad</p><p class="value" id="humidity">--</p></div>
+      <div class="data-box"><p class="label">💨 Viento</p><p class="value" id="wind-speed">--</p></div>
+      <div class="data-box"><p class="label">🧭 Dirección</p><p class="value" id="wind-dir">--</p></div>
+      <div class="data-box"><p class="label">🌧️ Lluvia</p><p class="value" id="rainfall">--</p></div>
+      <div class="data-box"><p class="label">🌍 Presión</p><p class="value" id="pressure">--</p></div>
+      <div class="data-box"><p class="label">☀️ Índice UV</p><p class="value" id="uv-index">--</p></div>
+      <div class="data-box"><p class="label">🕒 Hora</p><p class="value" id="time">--</p></div>
+    </div>
+    <p id="error-message" class="text-red-500 text-sm mt-2 hidden"></p>
+  </div>
+
+  <div class="weather-screen">
+    <h2 class="text-xl font-bold mb-4">🔮 Pronóstico de 7 días</h2>
+    <div id="forecast" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-left text-sm sm:text-base"></div>
+  </div>
+
+  <script>
+    async function fetchWeatherData() {
+      try {
+        const resp = await fetch('/api/observations');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json(); // el servidor siempre devuelve JSON
+        const obs = (data && Array.isArray(data.observations) && data.observations[0]) ? data.observations[0] : null;
+
+        if (!obs) {
+          for (const id of ['temperature','humidity','wind-speed','wind-dir','rainfall','pressure','uv-index','time']) {
+            document.getElementById(id).textContent = '--';
+          }
+          const msg = document.getElementById('error-message');
+          msg.textContent = '⚠️ Sin datos de la estación en este momento.';
+          msg.classList.remove('hidden');
+          return;
+        }
+
+        const metric = obs.metric || {};
+        document.getElementById('temperature').textContent = `${metric.temp ?? '--'} °C`;
+        document.getElementById('humidity').textContent = `${obs.humidity ?? '--'} %`;
+        document.getElementById('wind-speed').textContent = `${metric.windSpeed ?? '--'} km/h`;
+        const dir = Number(obs.winddir ?? 0);
+        const dirs = ['N','NE','E','SE','S','SO','O','NO'];
+        const idx = Math.round(dir / 45) % 8;
+        document.getElementById('wind-dir').textContent = `${isNaN(dir) ? '--' : dir + '°'} (${dirs[idx]})`;
+        document.getElementById('rainfall').textContent = `${metric.precipTotal ?? 0} mm`;
+        document.getElementById('pressure').textContent = `${metric.pressure ?? '--'} hPa`;
+        document.getElementById('uv-index').textContent = obs.uv ?? '--';
+        document.getElementById('time').textContent = obs.obsTimeLocal ? new Date(obs.obsTimeLocal).toLocaleString() : '--';
+
+        document.getElementById('error-message').classList.add('hidden');
+      } catch (err) {
+        console.error('⚠️ Error al obtener datos:', err);
+        const msg = document.getElementById('error-message');
+        msg.textContent = `⚠️ Error: ${err.message}`;
+        msg.classList.remove('hidden');
+      }
+    }
+
+    async function fetchForecast() {
+      try {
+        const r = await fetch('/api/forecast');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+
+        const el = document.getElementById('forecast');
+        el.innerHTML = '';
+
+        const days = data.dayOfWeek || [];
+        const tmax = data.temperatureMax || [];
+        const tmin = data.temperatureMin || [];
+        const narrative = data.narrative || [];
+
+        for (let i = 0; i < days.length && i < 7; i++) {
+          const d = document.createElement('div');
+          d.className = 'bg-white/10 rounded p-3';
+          d.innerHTML = `
+            <div class="font-bold">${days[i]}</div>
+            <div>Max: ${tmax[i] ?? '--'} °C | Min: ${tmin[i] ?? '--'} °C</div>
+            <div>${narrative[i] ?? ''}</div>
+          `;
+          el.appendChild(d);
+        }
+      } catch (err) {
+        console.error('⚠️ Error forecast:', err);
+      }
+    }
+
+    fetchWeatherData();
+    fetchForecast();
+    setInterval(fetchWeatherData, 60_000);
+  </script>
+</body>
+</html>
